@@ -1,0 +1,125 @@
+import os
+import subprocess
+import urllib.parse
+from 获取所有文件的信息 import get_file_details, get_folder_files
+import time
+
+# 用 IDM 下载文件
+def download_with_idm(file_url, save_path):
+    """
+    使用 IDM 下载文件并保存到指定路径
+    :param file_url: 文件的下载链接
+    :param save_path: 文件保存的本地路径
+    """
+    # 创建保存文件的目录（如果不存在）
+    save_dir = os.path.dirname(save_path)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)  # 创建目录
+
+    # IDM 命令行调用，传递下载链接和保存路径
+    idm_cmd = [
+        "C:\\Users\\zhy\\Downloads\\IDM 6.42\\IDM\\IDMan.exe",  # IDM 安装路径
+        "/d", file_url,  # 下载链接
+        "/p", save_dir,  # 保存路径
+        "/f", os.path.basename(save_path),  # 文件名
+        "/n",  # 不提示用户
+        "/q"  # 安静模式，不弹出 IDM 窗口
+    ]
+
+    # 使用 subprocess 调用 IDM 下载
+    time.sleep(30)
+    subprocess.run(idm_cmd, check=True)  # 执行命令
+
+
+
+# 获取下载链接（构建 URL）
+def construct_download_link(base_url, file_path, sign):
+    """
+    构建下载链接
+    :param base_url: Alist API 的基础 URL
+    :param file_path: 文件的路径
+    :param sign: 下载链接的签名
+    :return: 完整的下载链接
+    """
+    encoded_path = urllib.parse.quote(file_path)  # 对文件路径进行 URL 编码
+    download_link = f"{base_url}/d/{encoded_path}?sign={sign}"
+    return download_link
+
+
+# 下载所有文件
+def download_all_files(base_url, token, folder_path="", root_save_path="G:/111"):
+    """
+    递归下载所有文件并保持文件夹结构
+    :param base_url: Alist API 的基础 URL
+    :param token: 用户认证 token
+    :param folder_path: 当前文件夹路径
+    :param root_save_path: 根文件夹保存路径
+    """
+    # 获取当前目录的文件夹信息
+    response = get_file_details(base_url, token, folder_path)
+
+    # 如果返回的响应没有文件夹或文件数据
+    if 'data' not in response:
+        print(f"Error: Missing 'data' in response from {folder_path}")
+        return []
+
+    file_info = response['data']
+
+    # 判断是否为文件夹
+    if file_info.get('is_dir', False):
+        print(f"文件夹: {folder_path}/{file_info['name']}")
+
+        # 获取该文件夹内部的文件列表
+        folder_files_response = get_folder_files(base_url, token, folder_path)
+
+        # 如果没有返回文件内容
+        if 'data' not in folder_files_response:
+            print(f"Error: 'data' not found in files list for {folder_path}")
+            return []
+
+        files = folder_files_response['data']["content"]
+
+        for file in files:
+            file_name = file['name']
+            is_dir = file['is_dir']
+            file_path = f"{folder_path}/{file_name}"  # 获取文件路径
+            sign = file.get('sign', '')  # 获取签名
+            modified_time = file['modified']
+
+            # 打印文件或文件夹信息
+            print(f"路径: {file_path}")
+            print(f"文件名: {file_name}")
+            print(f"是否文件夹: {'是' if is_dir else '否'}")
+            if not is_dir:
+                # 构建下载链接
+                download_link = construct_download_link(base_url, file_path, sign)
+                print(f"下载链接: {download_link}")
+
+                # 构建保存路径，保留文件夹结构
+                save_path = os.path.join(root_save_path, file_path.lstrip('/'))  # 移除最前面的 '/'
+                download_with_idm(download_link, save_path)  # 调用 IDM 下载文件
+
+            print(f"修改时间: {modified_time}")
+            print("-" * 40)
+
+            # 如果是子文件夹，递归调用
+            if is_dir:
+                download_all_files(base_url, token, f"{folder_path}/{file_name}", root_save_path)  # 递归进入子文件夹
+    else:
+        print(f"{folder_path} 不是一个文件夹，跳过")
+
+
+# 主函数
+def main():
+    # 填写 Alist API 的基础 URL 和 token
+    base_url = "http://127.0.0.1:5244"  # Alist 的 API 基础 URL
+    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicHdkX3RzIjoxNzMwNjIwODkzLCJleHAiOjE3MzE4MzIxNzYsIm5iZiI6MTczMTY1OTM3NiwiaWF0IjoxNzMxNjU5Mzc2fQ.sj1DV2wt0IQ64lRX6XZlMLyoiQdpeBG93zVnn_70wZk"  # 你的 API token
+
+    root_folder = "/阿里云盘Open/来自分享/初级"  # 根目录或者指定目录，根目录可以为空
+
+    # 获取根目录及子目录的文件结构并下载
+    download_all_files(base_url, token, root_folder)
+
+
+if __name__ == "__main__":
+    main()
